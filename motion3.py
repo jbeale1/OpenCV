@@ -4,6 +4,11 @@
 # http://www.pyimagesearch.com/2015/05/25/basic-motion-detection-and-tracking-with-python-and-opencv/
 # additions to compute velocity and distance-travelled by J.Beale 7/3/2015
 
+# REM Windows batch file to extract CSV data from all vi_*.mp4 files in directory
+# REM first line is CSV file column headers
+# echo xc, yc, xwidth, xvel, xdist > trackH.csv
+# for %%f in (vi_*.mp4) do python motion3.py -v %%f >> trackH.csv
+
 # import the necessary packages
 import argparse
 import datetime
