@@ -21,7 +21,7 @@ ap.add_argument("-v", "--video", help="path to the video file")
 ap.add_argument("-a", "--min-area", type=int, default=(rf*rf*500), help="minimum area size")
 args = vars(ap.parse_args())
 
-record = False  # should we record video output?
+record = True  # should we record video output?
 voname = 'track-out5.avi' # name of video output to save
 
 fname = "none"
@@ -82,10 +82,18 @@ while grabbed:
 
     for i in circles[0,:]:
       count += 1   # how many circles
+      xc = int(i[0])
+      yc = int(i[1])
+      rc = int(i[2])
+      y1 = int(yc+rc+4)
+      y2 = int(yc+100)
       # draw the outer circle
-      cv2.circle(imgRAW,(int(i[0]),i[1]),i[2],(0,255,0),2)
+      cv2.circle(imgRAW,(xc,yc),rc+2,(0,255,0),2,cv2.LINE_AA)
       # draw the center of the circle
-      cv2.circle(imgRAW,(int(i[0]),i[1]),2,(0,0,255),3)
+      cv2.circle(imgRAW,(xc,yc),2,(0,0,255),2,cv2.LINE_AA)
+      # draw vertical line below circle
+      cv2.line(imgRAW,(xc,y1),(xc,y2),(0,0,255),2)
+      
       # print "%d, %5.1f, %5.1f, %5.1f" % (count,i[0]/hscalefac,i[1],i[2]) # circle parameters (x,y) r
       if (count < 3):
         x[count] = i[0]  # x center coordinate of this circle
