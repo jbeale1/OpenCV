@@ -4,11 +4,9 @@
 # http://www.pyimagesearch.com/2015/05/25/basic-motion-detection-and-tracking-with-python-and-opencv/
 # additions to compute velocity and distance-travelled by J.Beale 7/7/2015
 
-# specific camera view cal points: 640 or 1296 pixels across. Vx(corr) = Vx * f * (Xmax - x)
-# (486/640), -25.5    (35/640), -13.4      dX = (486-35)/640= 0.7047 : 25.5/13.3 = 1.917   f=2.72
-# (591/640), 28.7     (209/640), 18.25     dX = (591-209)/640= 0.597 : 28.7/18.25=1.573    f=2.63
-# (1002/1296), -42.8  (52/1296), -21.67    dX = (1002-52)/1296=0.733 : 42.8/21.67=1.976    f=2.69
-# (1148/1296), 45     (528/1296), 32       dX = (1148-528)/1296=0.478: 45/32=1.406         f=2.94
+# specific RPi camera view, full frame video @ 1296 pixels across. 
+# line fit: y = 36.8 + (0.05295) * x
+# y is (pixels/m) scale factor   x is position in pixels (object assumed on road)
 
 # import the necessary packages
 import argparse
@@ -54,8 +52,14 @@ displayWidth = 320 # width of output window display
 fracF = 0.15       # adaptation fraction of background on each frame 
 #GB = int((rf*15)+0.9)+1      # gaussian blur size
 GB = 15
-psF1 = 1.7     # normalized x-axis perspective correction for LHS of screen
-psF2 = 1.2     # normalized x-axis perspective correction factor  for RHS of screen
+fps = 25           # frames per second
+mphpms = 2.236936  # miles per hour per m/s
+mphpm = mphpms * fps  # miles per hour per (meter*fps)  fps = 25, frame time = 1/25 sec
+minPThreshold = 35 # minimum pixel difference value threshold for detection
+#psF1 = 1.0     # normalized x-axis perspective correction for LHS of screen (1.7)
+#psF2 = 1.0     # normalized x-axis perspective correction factor  for RHS of screen (1.2)
+vxSF1 = 18*(4/rf)/40.0  # x velocity calibration linear scale factor for L-R
+vxSF2 = (18/15.0) * vxSF1  # x velocity calibration linear scale factor R-L
 dilateIter = int(rf)     # number of iterations of dilation (join adjacent areas)
 fracS = 0.03       # adaptation during motion event
 noMotionCount = 0  # how many consecutive frames of no motion detected
@@ -65,28 +69,34 @@ maxVel = rf*20     # fastest real-life reasonable velocity (not some glitch)
 maxDVel = rf*2.0   # maximum change in velocity per frame (~ acceleration)
 maxDXWidth = rf*20 # maximum change in X width per frame
 vfilt = 0.5        # stepwise velocity filter factor (low-pass filter) 
-minXPos = rf*12     # minimum valid x position for valid event track
-xdistThresh = rf*15   # how many pixels an object must travel before it is counted as an event
+minXPos = rf*10     # minimum valid x position for valid event track
+xdistThresh = rf*10   # how many pixels an object must travel before it is counted as an event
 ydistThresh = rf*5    # how many pixels an object must travel before it is counted as an event
 xvelThresh = rf*1     # how fast object is moving along x before considered an event
 yvelThresh = rf*0.3   # how fast object is moving along y before considered an event
 yCropFrac = 14      # crop off this (1/x) fraction of the top of frame (time/date string)
 fCount = 0          # count total number of frames
 font = cv2.FONT_HERSHEY_SIMPLEX              # for drawing text
+avgSpeed = 0        # average speed
+avgSpeedCount = 0
+
+print "maxDXWidth = %5.1f" % maxDXWidth
+print "maxDVel = %5.1f" % maxDVel
  
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-v", "--video", help="path to the video file")
 ap.add_argument("-a", "--min-area", type=int, default=(rf*rf*500), help="minimum area size")
 args = vars(ap.parse_args())
- 
+
+fname = "none"
 # if the video argument is None, then we are reading from webcam
 if args.get("video", None) is None:
     camera = cv2.VideoCapture(0)
     time.sleep(4)
- 
 # otherwise, we are reading from a video file
 else:
+    fname = args["video"]
     camera = cv2.VideoCapture(args["video"])
 
 record = False  # should we record video output?
@@ -152,10 +162,10 @@ while grabbed:
       averageFrame = gray        # hard reset to average filter; throw away older samples
       slowFrame = averageFrame
       noMotionCount = 0
-      # print "# Bkgnd reset"
+      print "# Bkgnd reset"
       
     frameDelta = cv2.absdiff(averageFrame, gray)  # difference of this frame from average background
-    thresh = cv2.threshold(frameDelta, 25, 255, cv2.THRESH_BINARY)[1]
+    thresh = cv2.threshold(frameDelta, minPThreshold, 255, cv2.THRESH_BINARY)[1]
     (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(frameDelta)
     # print "max = %d  %d,%d" % (maxVal, w[1], h[1])
     
@@ -235,9 +245,21 @@ while grabbed:
               cv2.putText(frame,tstring,(int(x[i]),int(yc[i]+30*rf)), font, 0.5,bcolor,2,cv2.LINE_AA)
               cv2.putText(frame,tstring2,(int(x[i]),int(yc[i]+40*rf)), font, 0.5,bcolor,2,cv2.LINE_AA)
               xf = ((1.0*procWidth - x[i])/procWidth)  # fractional distance across screen, 0 = RHS
-              perspecF = (psF1 * xf) + (psF2 * (1.0-xf))
-              xvelC = xvelFilt[i] * (1.0 + (perspecF * xf ))  # geometric perspective correction
+              # perspecF = (psF1 * xf) + (psF2 * (1.0-xf))
+              #if (xvelFilt[i] > 0):
+              #  vxSF = vxSF1  # positive velocity = left to right motion
+              #else:
+              #  vxSF = vxSF2
+              pxpm = (36.8 + 0.05295 * x[i])   # pixels/m as a function of x (perspective)
+              vxSF = mphpm / pxpm    # scale factor to get MPH from pixels
+              xvelC = vxSF * xvelFilt[i]  # geometric perspective correction
               if (i==0):  # assume 1st contour is the good one
+                if (x[i]<(rf*200)) and (x[i]>(rf*150)):
+                  avgSpeedCount += 1
+                  if avgSpeed == 0:
+                    avgSpeed = xvelC
+                  else:
+                    avgSpeed += xvelC
                 print "%5.1f,%5.1f, %5.1f,  %5.2f, %5.0f, %5.1f" % \
                  (x[i], ysp-(y[i]+h[i]), w[i], xvelC, xdist[i], dXWidth[i])
 
@@ -283,9 +305,12 @@ while grabbed:
 dur = time.clock() - tStart
 print "# EOF frames = %d  dur = %5.3f fps=%5.1f" % (fCount, dur, fCount/dur)  # timing information
 
-# cleanup the camera and close any open windows
+if (avgSpeedCount != 0):  # if we detected anything moving this run
+  avgSpeed = avgSpeed / (1.0 * avgSpeedCount)
+  print "# SPEED %s, %5.1f" % (fname, avgSpeed)
+
+  # cleanup the camera and close any open windows
 if (record):
     video.release()    
 camera.release()
 cv2.destroyAllWindows()
-        
