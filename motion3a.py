@@ -44,6 +44,8 @@ ystart = np.float32(np.zeros(maxObjects))    # y position when object first trac
 ydist = np.float32(np.zeros(maxObjects))     # y distance travelled
 yo = np.float32(np.zeros(maxObjects))        # y last frame center coordinates  
 yvel = np.float32(np.zeros(maxObjects))      # delta-y per frame
+capSign = np.int32(np.zeros(maxObjects))     # sign of capture distance
+capSignO = np.int32(np.zeros(maxObjects))     # sign of capture distance
                     
 #procWidth = 640   # processing width (x resolution) of frame
 procWidth = 1296   # processing width (x resolution) of frame
@@ -52,6 +54,8 @@ displayWidth = 320 # width of output window display
 fracF = 0.15       # adaptation fraction of background on each frame 
 #GB = int((rf*15)+0.9)+1      # gaussian blur size
 GB = 15
+capFrac = 750.0/1296  # fraction of frame width (from left) to capture image
+capPosX = int(capFrac * procWidth)  # X coordinate location of image capture
 fps = 25           # frames per second
 mphpms = 2.236936  # miles per hour per m/s
 mphpm = mphpms * fps  # miles per hour per (meter*fps)  fps = 25, frame time = 1/25 sec
@@ -130,6 +134,7 @@ if grabbed:                            # did we actually get a frame?
   if (record):
     video = cv2.VideoWriter(voname, -1, 25, (xsp,ysp))  # open output video to record
   
+# ===========================================================================
 # loop over the frames of the video
 # ===========================================================================
 while grabbed:
@@ -201,6 +206,7 @@ while grabbed:
         yvel[i] = (y[i]+h[i]) - yo[i]  # delta-x since previous frame
 
         if xvelFilt[i] == 0.0:  # is this the initial value?
+            capSignO[i] = 0     # sign of capture distance
             xvelFilt[i] = xvel[i]  # reset value without averaging  
             oxvel[i] = xvelFilt[i] # set initial acceleration to zero
             wo[i] = w[i]           # reset old X width
@@ -225,7 +231,8 @@ while grabbed:
            yvelFilt[i] = 0
            print "# RESET : big change -> new object"
            print "# %d: xv:%5.1f yv:%5.1f av:%5.1f dXW:%5.1f " % (i, xvel[i], yvel[i], avel, dXWidth[i])
-           
+        
+        capSign[i] = np.sign(1.0*x[i] + 0.5 - capPosX) # either +1 or -1, cannot be 0
         xdist[i] = x[i] - xstart[i] # x distance this blob has travelled so far
         ydist[i] = (y[i]+h[i]) - ystart[i] # y distance this blob has travelled so far
         xo[i] = x[i]  # remember this coordinate for next frame
@@ -242,10 +249,9 @@ while grabbed:
             motionDetect = True
             bcolor = (0,0,255)  # Blue,Green,Red    
             if (motionCount > 1):  # ignore first frame of motion, often spurious            
-              cv2.putText(frame,tstring,(int(x[i]),int(yc[i]+30*rf)), font, 0.5,bcolor,2,cv2.LINE_AA)
-              cv2.putText(frame,tstring2,(int(x[i]),int(yc[i]+40*rf)), font, 0.5,bcolor,2,cv2.LINE_AA)
+              #cv2.putText(frame,tstring,(int(x[i]),int(yc[i]+30*rf)), font, 0.5,bcolor,2,cv2.LINE_AA)
+              #cv2.putText(frame,tstring2,(int(x[i]),int(yc[i]+40*rf)), font, 0.5,bcolor,2,cv2.LINE_AA)
               xf = ((1.0*procWidth - x[i])/procWidth)  # fractional distance across screen, 0 = RHS
-              # perspecF = (psF1 * xf) + (psF2 * (1.0-xf))
               #if (xvelFilt[i] > 0):
               #  vxSF = vxSF1  # positive velocity = left to right motion
               #else:
@@ -263,10 +269,24 @@ while grabbed:
                 print "%5.1f,%5.1f, %5.1f,  %5.2f, %5.0f, %5.1f" % \
                  (x[i], ysp-(y[i]+h[i]), w[i], xvelC, xdist[i], dXWidth[i])
 
-        cv2.rectangle(frame, (x[i], y[i]), (x[i] + w[i], y[i] + h[i]), bcolor, 2)  # draw box around event
+        # cv2.rectangle(frame, (x[i], y[i]), (x[i] + w[i], y[i] + h[i]), bcolor, 2)  # draw box
         nstring = "%d" % (i+1)
-        cv2.putText(frame,nstring,(int(xc[i]),int(yc[i])), font, 1,bcolor,2,cv2.LINE_AA) # object number label
+        #cv2.putText(frame,nstring,(int(xc[i]),int(yc[i])), font, 1,bcolor,2,cv2.LINE_AA) # object number label
+        if (capSignO[i] != 0) and (capSign[i] != capSignO[i]):  # just crossed X capture line
+          # capture rectangular region of interest
+          yCapOffset = -15  # adjust upper edge of ROI, (+ down, - up)
+          crop_img = frame[y[i]+yCapOffset:y[i]+h[i],x[i]:x[i]+w[i]]
+          aSpeed = avgSpeed/(1.0 * avgSpeedCount) # avgSpeedCount better not be 0!
+          tstring = "%5.1f" % (abs(aSpeed))
+          cv2.putText(crop_img,tstring,(int(w[i]-80),int(h[i]-(yCapOffset+5))), font, 0.75,bcolor,2,cv2.LINE_AA)
+          cv2.imshow("Crop", crop_img)             # crop of original video frame
+          spd = "%02d_" % int(abs(aSpeed)+0.5)
+          capFname = "CAP_" + spd + fname[18:-4] + ".jpg"  # remove leading directory name, add measured speed
+          print "# CAP %s (%d,%d)(%d,%d) %5.1f mph" % (capFname,x[i],y[i],w[i],h[i],aSpeed)
+          cv2.imwrite( capFname, crop_img )  # save selected ROI as jpeg
 
+        capSignO[i] = capSign[i]  # old sign of x-capture distance
+        
     if (motionDetect):
       noMotionCount = 0
       motionCount += 1
