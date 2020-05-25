@@ -5,7 +5,7 @@ Monitor IP Camera for motion [<video_source>]
 '''
 
 # Python 3.6.6 and OpenCV 3.4.1
-# by J.Beale 30-Oct-2018 - 18-Dec-2019
+# by J.Beale 30-Oct-2018 - 25-May-2020
 
 # for summary/montage thumbnail image:
 # montage th_DH6*.png -tile 8x -geometry "1x1<+2+2" summary.png
@@ -16,35 +16,32 @@ import numpy as np
 import cv2 as cv
 import imutils  # http://www.pyimagesearch.com/2015/02/02/
 import time
-from datetime import datetime
+from datetime import datetime, date, timedelta
+from suntime import Sun   # sun rise/set times
+import pytz               # timezones
 from pathlib import Path  # (to check if log file exists)
-import os       # to flush buffer to disk
+import os       # to flush buffer to disk, also file size
 import math     # math.floor()
 
 # ==============================================================
 
 CNAME = 'DH6'
 UTYPE = "rtsp://"
-
-# === shh: secret passwords are here ====
 UPASS = "user:password"
 FPASS = "ftp_username:ftp_password"
-ftpDir = "ftp://my.ftpsite.com/cam3/"  # remote FTP directory to store images in
-# === no secrets beyond this point =======
-
+ftpDir = "ftp://my.ftpsite.com/"  # remote FTP directory to store images in
 
 IPADD = "192.168.1.26"
 PORT = "554"
 URL2 = "/cam/realmonitor?channel=1&subtype=0"  # Dahua IP Cameras
 
 # parameters tuned assuming stream at 15 fps
-FDRATE=1          # frame decimation rate: only display 1 in this many frames
+FDRATE=2          # frame decimation rate: only display 1 in this many frames
 XFWIDE = 176       # width of resized frame
-vThreshold = 1100   # how many non-zero velocity pixels for event
 saveCount = 0      # how many images saved so far
 vThresh= 15        # minimum "significant" velocity (was 30)
 runLimit=2         # how many frames of no motion ends a run
-validRunLength= 7  # minimum frames of motion for valid event
+validRunLength= 6  # minimum frames of motion for valid event (was 7)
 xcent = XFWIDE*0.38    # X ideal position for image
 xcent2 = XFWIDE*0.50    # X ideal #2 position for image
 xcent3 = XFWIDE*0.30    # X ideal #3 position for image
@@ -71,6 +68,30 @@ thumbWidth= 120   # max pixels wide for thumb
 thumbAspect = 1.333;  # maximum aspect ratio for thumbnail
 moT = 1.1         # Calc. dx/dt motion threshold for saving event
 vidname= UTYPE + UPASS + "@" + IPADD + ":" + PORT + URL2
+timeday = 0       # 0=night, 1=day: start at night
+# ================================================================
+
+def check_sunup():  # return 1 if it sun is currently up; 0 if not
+  pst = pytz.timezone('US/Pacific')
+  tnow = pst.localize(datetime.now())
+  lat = 45.430 ; lon = -122.684 # A particular place in Lake Oswego
+  sun = Sun(lat, lon)
+
+  # Get today's sunrise and sunset
+  Tdate = date.today()  # datetime.date.today() is today's date
+  today_sr = (sun.get_local_sunrise_time(Tdate) )
+  today_ss = (sun.get_local_sunset_time(Tdate)  ) # but might be yesterday's sunset
+  if today_ss < today_sr:
+        today_ss = today_ss + timedelta(1)  # account for non-UTC bug in suntime.Sun
+
+  if (today_sr < tnow) and (tnow < today_ss):
+    return 1     # The sun is now up
+  else:
+    return 0     # The sun is now down
+
+
+# print(vidname) # for debug purposes
+# for Dahua: "/cam/realmonitor?channel=1&subtype=2"
 # ================================================================
 
 def draw_flow(img, flow, step=10):
@@ -112,6 +133,8 @@ def draw_hsv(flow):
     hsv[...,2] = np.minimum(v*64, 255)
     bgr = cv.cvtColor(hsv, cv.COLOR_HSV2BGR)
     return bgr
+
+# ================================================
 
 if __name__ == '__main__':
     import sys
@@ -167,18 +190,26 @@ if __name__ == '__main__':
     minR3 = 1000        # force it high
     maxY = 0           # maximum Y motion center of an event
     mCountMax = 0      # largest mCount observed during this event
-
     # maxFrames = 40     # maximum frames in one motion record
     # frameElements = 10 # count data elements recorded per frame
     # mfrec = np.zeros((maxFrames,frameElements),dtype=float)  # array of motion frame data elements
+    loops = int(0)      # how many times through loop so far 
+    timeday = check_sunup()  # update SunIsUp status
 
     while True:
+        loops += 1
+        if ((loops % 600) == 0):
+          timeday = check_sunup()  # update SunIsUp status
+          # print("Timeday = %d" % timeday)
+          # print("Loop count: %d, %d" % (loops,timeday))
+
         #ret, img = cam.read()
         ret, imgRaw = cam.read()
         img = imutils.resize(imgRaw, width=XFWIDE)
         #w,h = cv.GetSize(img)  # width and height of image
         #xcent = w/2
         #ycent = h/2
+        vThreshold = 1500 + (4100-1500)*timeday   # num. non-zero vel. pix for event (day:4100 night:1500)
 
         frameCount += 1
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
@@ -297,18 +328,6 @@ if __name__ == '__main__':
                     nstring = ("%s, %5.3f\n" % (x,frac))
                     logf.write(nstring)                  
 
-                  # dts = time.strftime("%Y-%m-%d %H:%M:%S", tBest) # time & date string
-                  # dts = time.strftime("%Y-%m-%d %H:%M:%S.%f", tBest)[:-3] # date+time to msec
-                  buf = "# " + tsBest 
-                  logf.write(buf)
-                  print(buf,end='')
-                  buf = (" , %d, %.2f,%.2f,%.2f, %3.2f, %03d, %d\n\n" % 
-                     (mRun, dm2, dm1, dm3, xstd, maxY, mCountMax))
-                  logf.write(buf)
-                  print(buf,end='')  # without extra newline
-                  #print(buf)
-                  logf.flush()  # after event, actually write the buffered output to disk
-                  os.fsync(logf.fileno())      
                   dt = tBest.strftime('%y%m%d_%H%M%S_%f')[:-3]
                   dt2 = tBest2.strftime('%y%m%d_%H%M%S_%f')[:-3]
                   dt3 = tBest3.strftime('%y%m%d_%H%M%S_%f')[:-3]
@@ -343,6 +362,24 @@ if __name__ == '__main__':
                   cv.imwrite(fname4, thumbImg ) # active region
                   #cv.rectangle(bestImg,(x1,y1),(x2,y2),(0,255,0),1)  # draw rectangle on img
                   cv.imwrite(fname3, bestImg) # save best image
+                  fsize = os.path.getsize(fname3) # read back the actual JPEG image size
+                  # if (fsize < 200000):
+                  #  timeday = 0  # small JPEG image size => night time
+                  #else:
+                  #  timeday = 1  # larger JPEG image size => daytime
+
+                  buf = "#" + tsBest[:-1]   # data to write to logfile: time+time to 10 msec
+                  logf.write(buf)
+                  print(buf,end='')
+                  buf = (", %02d,%05.1f,%05.1f,%05.1f, %04.1f, %05.1f, %03d, %04d, %d, %d\n\n" % 
+                     (mRun, dm2, dm1, dm3, xstd, xavg, maxY, mCountMax, int(fsize/1000), timeday) )
+                  logf.write(buf)
+                  print(buf,end='')  # without extra newline
+                  #print(buf)
+                  logf.flush()  # after event, actually write the buffered output to disk
+                  os.fsync(logf.fileno())      
+
+
                   if (imageSaves > 1) and (tBest2 != tBest):
                     cv.imwrite(fname32, bestImg2) # save 2nd best image
                   if ((imageSaves > 2) and (tBest3 != tBest) and (tBest3 != tBest2)):
@@ -368,6 +405,10 @@ if __name__ == '__main__':
         if (motionNow):
           if (mRun > 4) and ((mRun-5) % 3) == 0:
             saveCount += 1
+            #fname1 = "imag%05d.jpg" % saveCount
+            #fname2 = "mask%05d.jpg" % saveCount            
+            #cv.imwrite(fname1, imgRaw) # frame as JPEG    
+            #cv.imwrite(fname2, vt) # save mask
         
         if(frameCount % FDRATE) == 0:
           cv.imshow('Video_'+CNAME, img)  # raw image
@@ -377,8 +418,7 @@ if __name__ == '__main__':
           if show_vt:
             cv.imshow('M_'+CNAME, vt)
           ch = cv.waitKey(1)
-          
-            
+                      
     logf.flush()  # after event, actually write the buffered output to disk
     #os.fsync()            
     logf.close()            
