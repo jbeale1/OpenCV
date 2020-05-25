@@ -74,7 +74,7 @@ timeday = 0       # 0=night, 1=day: start at night
 def check_sunup():  # return 1 if it sun is currently up; 0 if not
   pst = pytz.timezone('US/Pacific')
   tnow = pst.localize(datetime.now())
-  lat = 45.430 ; lon = -122.684 # A particular place in Lake Oswego
+  lat = 40 ; lon = -120
   sun = Sun(lat, lon)
 
   # Get today's sunrise and sunset
