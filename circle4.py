@@ -2,6 +2,7 @@
 
 # Detect black-on-white circles using contours; find center locations
 # and intersection formed by lines connecting large and small dots
+# Currently runs on a single JPEG frame
 
 # works on Raspberry Pi with Python 3.7.3, OpenCV 4.5.1
 # J.Beale 11-Feb-2021
@@ -89,6 +90,7 @@ def unsharp_mask(image, kernel_size=(5,5), sigma=1.0, amount=1.0, threshold=0):
 
 def main(argv):
     
+    output_file = '/dev/shm/Plog.csv'
     default_file = '/home/pi/Pictures/circle4.jpg'
     video_file = 'manual_2021-02-11_08.29.52_1.mp4' # moving parts
 
@@ -249,10 +251,14 @@ def main(argv):
 
         # beam (mm) above center & 2 hopefully fixed distances
         #print ("%d,%5.4f,%5.4f,%5.4f" % (fc,rDistC,bDistC,tDistC))
-        print ("%d,%5.4f,%5.4f,%5.4f" % (sec,rDistC,bDistC,tDistC))        
+        
+        fout= open(output_file,"a+")      # append to log file
+        fout.write("%d,%5.4f,%5.4f,%5.4f\n"%(sec,rDistC,bDistC,tDistC))
+        fout.close
+
         
       #print(" ")                          
-      cv.imshow("contours", cframe) # DEBUG - show contours
+      #cv.imshow("contours", cframe) # DEBUG - show contours
        
 # -------------------------------------------------
       #exit()
@@ -285,11 +291,11 @@ def main(argv):
         #exit()
       
 
-     key = cv.waitKey(1)
-     if key == ord('q'):
-           stop=True      
-     if key == ord(' '):
-         pause = not pause
+     #key = cv.waitKey(1)
+     #if key == ord('q'):
+     #      stop=True      
+     #if key == ord(' '):
+     #    pause = not pause
 
 # ------------------------------------------
 # after all is calculated, show final averages
@@ -309,10 +315,10 @@ if __name__ == "__main__":
     main(sys.argv[1:])
 
 # =====================================================================
-#   combine jpg images into mp4 video:
+#  NOTES :  combine jpg images into mp4 video:
 # ffmpeg -start_number 0 -i tl_00005_%05d.jpg -c:v libx264 -vf "fps=24,format=yuv420p" H1_out8.mp4
 #   rescale video to new (x,y) dimensions:
 # ffmpeg -i H1_out4.mp4 -vf scale=640:360,setsar=1:1 small_H1_out4.mp4
 # 50.07 frames/cycle, 24 frames/s => T = 2.086 sec
 # Picam v1.3 FullRes: (3280x2464)
-# find /dev/shm/t?.jpg | entr ./circle4.py /dev/shm/t7.jpg
+# find /dev/shm/t?.jpg | entr ./circle4.py /dev/shm/t7.jpg >> Feb11_Log.csv &
