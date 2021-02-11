@@ -18,20 +18,28 @@ import numpy as np
 # mean accumulates the mean of the entire dataset
 # M2 aggregates the squared distance from the mean
 # count aggregates the number of samples seen so far
-def update(existingAggregate, newValue):
-    (count, mean, M2) = existingAggregate
+def update(D, newValue):
+    count = D[0]
+    mean = D[1]
+    M2 = D[2]
+
     count += 1
     delta = newValue - mean
     mean += delta / count
     delta2 = newValue - mean
     M2 += delta * delta2
-    return (count, mean, M2)
+    D[0] = count
+    D[1] = mean
+    D[2] = M2
+    return (D)
 
-# Retrieve the mean, variance and sample variance from an aggregate
-def finalize(existingAggregate):
-    (count, mean, M2) = existingAggregate
+# Retrieve the mean, variance and sample variance from collected data D
+def finalize(D):
+    count = D[0]
+    mean = D[1]
+    M2 = D[2] 
     if count < 2:
-        return float("nan")
+        return (float("nan"), float("nan"), float("nan"))
     else:
         (mean, variance, sampleVariance) = (mean, M2 / count, M2 / (count - 1))
         return (mean, variance, sampleVariance)
@@ -52,8 +60,14 @@ def intersection(L1, L2):  # find intersection point of 2 lines
         return x,y
     else:
         return False
+
+def distance(P1, P2):  # normal distance between 2D points
+    dx = P2[0] - P1[0]
+    dy = P2[1] - P1[1]
+    dist = math.sqrt(dx*dx + dy*dy)
+    return dist
         
-def distance(P1, P2):  # signed distance between 2D points
+def distanceS(P1, P2):  # Y-direction signed distance between 2D points
     dx = P2[0] - P1[0]
     dy = P2[1] - P1[1]
     dist = np.sign(dy) * math.sqrt(dx*dx + dy*dy)
@@ -76,16 +90,12 @@ def unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.0, threshold=0):
 def main(argv):
     
     default_file = '/home/pi/Pictures/circle4.jpg'
-    #video_file = 'rp54_2021-02-08_20.27.33_1.mp4' # larger motion
-    #video_file = 'rp54_2021-02-08_20.29.13_2.mp4' # smaller motion    
-    #video_file = 'manual_2021-02-09_21.04.34_0.mp4'
-    #video_file = 'manual_2021-02-09_21.18.37_2.mp4' # fairly small V
-    #video_file = 'manual_2021-02-09_21.19.30_3.mp4' # very small V
-    #video_file = 'H1_out6.mp4' # overnight 2/9
-    #video_file = 'image_2021-02-10_08.25.35_0.jpg'
-    #video_file = 'manual_2021-02-10_08.43.36_0.mp4' # new concentric targets
+
+    video_file = 'manual_2021-02-10_08.43.36_0.mp4' # new concentric targets
     #video_file = 'manual_2021-02-10_18.57.41_1.mp4' # more of the same
-    video_file = 'manual_2021-02-10_20.28.08_2.mp4' # yet more same
+    #video_file = 'manual_2021-02-10_20.28.08_2.mp4' # yet more same
+    video_file = 'manual_2021-02-11_00.18.44_0.mp4' # same, more
+    
     #video_file = 'small_H1_out4.mp4'
     #video_file = 'output.mp4'
 
@@ -108,12 +118,18 @@ def main(argv):
 # ---------------------------------------------------------------------
     pi = 3.14159265358979  # PI the constant
     
-    xSum = (0, 0, 0)  # storage to calculate variance (x)
-    ySum = (0, 0, 0)  # storage to calculate variance (y)
-    dSum = (0, 0, 0)  # contour diameter 
+    xSum = [0, 0, 0]  # storage to calculate variance (x)
+    ySum = [0, 0, 0]  # storage to calculate variance (y)
+    dSum = [0, 0, 0]  # contour diameter 
+    
+    # (x,y) variance data accumulator for 5 fiducials
+    # Ad[3][0] holds data for fiducial #4, x coord.
+    Ad = [ [[0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0]], 
+           [[0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0]], 
+           [[0, 0, 0], [0, 0, 0]] ]
     
     filename = argv[0] if len(argv) > 0 else video_file
-    print("Opening %s" % filename)
+    print("--- File: %s" % filename)    
 
     video = cv.VideoCapture(filename)
 
@@ -130,9 +146,9 @@ def main(argv):
     #cv.imwrite("frame1.png",frame)  # write out Frame #1
     #exit() # DEBUG
 
-
     # csv file column headers
-    print("count, dist")
+    #print("count, dist")
+    
     # expected target point area, Grey Thresh = 140
     
     #Tx,Ty,Td  = (609.967,110.887,107.2)  # UR1
@@ -159,7 +175,7 @@ def main(argv):
     #Tx,Ty,Td = (199.800,264.600,50.2)    # BL4
     #Tx,Ty,Td = (199.370,264.399,38.8)    # BL5 
     
-    Tx,Ty,Td = (1,1,38.8)    # nothing
+    Tx,Ty,Td = (1,1,38.8)    # nothing, nothing, nothing at all.
     
     # ==================== main loop ==============================
     while stop==False:     
@@ -181,50 +197,50 @@ def main(argv):
       #contours, hierarchy = cv.findContours(mask,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE)
       contours, hierarchy = cv.findContours(mask,cv.RETR_TREE,cv.CHAIN_APPROX_NONE)
       
-      print("Thresh: %d Contours: %d" % (minGrey,len(contours)))
+      #print("Thresh: %d Contours: %d" % (minGrey,len(contours)))
       cframe = np.zeros(shape=frame.shape, dtype=np.uint8) # create blank BGR image      
       
       clist = []
       oF = []     # list of (x,y) center for outer ring of fiducials
       aC = []     # list of (x,y) centers for all contours
+      aF = [[]]   # list of all centers of all fiducial rings
       
       
       for i in range(len(contours)): # loop over all contours
-        M = cv.moments(contours[i])
-        A = M['m00']  # area of contour
-        #if (A > 80) and (A < 40000):  # contour expected size?
-        if (A > 8659) and (A < 40000):  # contour expected size?          
-          cnt = contours[i]
-          perimeter = cv.arcLength(cnt,True)
-          x,y,w,h = cv.boundingRect(cnt)
-                    
-          Db = max(w,h) # diameter of bounding circle
-          D = math.sqrt(A*4/pi)     
-          # CA = (Db*Db*pi/4) # area of circle with that diameter
-          R = D/Db  # ratio of contour area to bounding circle area          
-          
-          cx = (M['m10']/A) # center of mass (cx,cy) of contour
-          cy = (M['m01']/A)
-          aC.append((cx,cy)) # save in list of all contour centers
+       M = cv.moments(contours[i])
+       A = M['m00']  # area of contour
+       if (A > 80) and (A < 40000):  # contour expected size?
+         cnt = contours[i]
+         perimeter = cv.arcLength(cnt,True)
+         x,y,w,h = cv.boundingRect(cnt)
+                   
+         Db = max(w,h) # diameter of bounding circle
+         D = math.sqrt(A*4/pi)     
+         R = D/Db  # ratio of contour area to bounding circle area          
+         
+         cx = (M['m10']/A) # center of mass (cx,cy) of contour
+         cy = (M['m01']/A)
+         aC.append((cx,cy)) # save in list of all contour centers
+           
+         if (A > 8659) and (A < 40000):  # contour expected size?          
           
           if (R > 0.85): # typ > 0.92
             cv.drawContours(cframe, contours, i, (255,100,100), 1)
             #clist.append(cnt)  # save this contour
             oF.append((cx,cy))            
-            print("(%5.3f,%5.3f)" % (cx,cy))
-            #dx = abs(cx - 409.78)
-            #dy = abs(cy - 270.697)
+            #print("(%5.3f,%5.3f)" % (cx,cy))
+            
             dx = abs(cx - Tx)  # 608.980,447.259
             dy = abs(cy - Ty)
             if (dx < 20) and (dy < 20):
             #if True:
-              print("%05.3f,%05.3f A=%5.1f D=%5.3f Ratio: %5.3f %5.3e,%5.3e" % (cx,cy,A,D,R,dx,dy),end="")
+              #print("%05.3f,%05.3f A=%5.1f D=%5.3f Ratio: %5.3f %5.3e,%5.3e" % (cx,cy,A,D,R,dx,dy),end="")
               if (abs(D-Td) < (0.1*D)):
                 xSum = update(xSum,cx)
                 ySum = update(ySum,cy)
                 dSum = update(dSum,D)
-                print(" D=%5.3f" % D,end="")
-              print("")
+                #print(" D=%5.3f" % D,end="")
+              #print("")
               
               kp = cv.KeyPoint(cx,cy,10) # to draw center-indicator mark
               cframe = cv.drawKeypoints(
@@ -238,7 +254,16 @@ def main(argv):
           cv.putText(cframe, str(i+1), (int(oF[i][0]),int(oF[i][1])), cv.FONT_HERSHEY_SIMPLEX, 1, 
               (255,255,255), 1, cv.LINE_AA)                        
       
+      for i in range(len(aC)):  # scan through all contour center points
+        for j in range(len(oF)):  # j is contour index number [0..4]
+            dist = distance(aC[i],oF[j])
+            if (dist < 4):
+              # print("(%d,%d) %5.3f" % (i,j,dist))
+              update(Ad[j][0],aC[i][0]) # record X coord
+              update(Ad[j][1],aC[i][1]) # record Y coord
               
+            
+      #print(" ")                          
       cv.imshow("contours", cframe) # DEBUG - show contours
       
       #gray = cv.medianBlur(gray, 3)  # did not benefit accuracy      
@@ -271,12 +296,14 @@ def main(argv):
          pause = not pause
 
 # ------------------------------------------
-    (xmean, xvariance, _) = finalize(xSum)    
-    (ymean, yvariance, _) = finalize(ySum)
-    (dmean, dvariance, _) = finalize(dSum)
-    print("-----")
-    print("%07.3f,%07.3f,%07.3f , %5.3e,%5.3e,%5.3e " % 
-      (xmean,ymean,dmean,xvariance,yvariance,dvariance))
+# after all is calculated, show final averages
+
+    for j in range(len(oF)):  # j is contour index number [0..4]
+      (xMean,xStd,_) = finalize(Ad[j][0])
+      (yMean,yStd,_) = finalize(Ad[j][1])
+      print("F%d: (%5.3f,%5.3f) std: %5.3e,%5.3e" % 
+        (j+1,xMean,yMean,xStd,yStd))
+    
     return 0
 
 if __name__ == "__main__":
