@@ -4,7 +4,7 @@
 # and intersection formed by lines connecting large and small dots
 
 # works on Raspberry Pi with Python 3.7.3, OpenCV 4.5.1
-# J.Beale 10-Feb-2021
+# J.Beale 11-Feb-2021
 
 import sys
 import math
@@ -13,11 +13,11 @@ import cv2 as cv
 import numpy as np
 
 # ====================================================================
+# For a new value newValue, compute the new count, new mean, new M2.
+#   mean accumulates the mean of the entire dataset
+#   M2 aggregates the squared distance from the mean
+#   count aggregates the number of samples seen so far
 
-# For a new value newValue, compute the new count, new mean, the new M2.
-# mean accumulates the mean of the entire dataset
-# M2 aggregates the squared distance from the mean
-# count aggregates the number of samples seen so far
 def update(D, newValue):
     count = D[0]
     mean = D[1]
@@ -39,10 +39,10 @@ def finalize(D):
     mean = D[1]
     M2 = D[2] 
     if count < 2:
-        return (float("nan"), float("nan"), float("nan"))
-    else:
-        (mean, variance, sampleVariance) = (mean, M2 / count, M2 / (count - 1))
-        return (mean, variance, sampleVariance)
+      return (float("nan"), float("nan"), float("nan"))
+    else:        
+      (mean, variance, sampleVariance) = (mean,M2/count,M2/(count - 1))
+      return (mean, variance, sampleVariance)
 
 def line(p1, p2):  # construct a line from 2 points
     A = (p1[1] - p2[1])
@@ -73,7 +73,7 @@ def distanceS(P1, P2):  # Y-direction signed distance between 2D points
     dist = np.sign(dy) * math.sqrt(dx*dx + dy*dy)
     return dist
 
-def unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.0, threshold=0):
+def unsharp_mask(image, kernel_size=(5,5), sigma=1.0, amount=1.0, threshold=0):
 # stackoverflow.com/questions/4993082/how-can-i-sharpen-an-image-in-opencv
     blurred = cv.GaussianBlur(image, kernel_size, sigma)
     sharpened = float(amount + 1) * image - float(amount) * blurred
@@ -90,14 +90,7 @@ def unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.0, threshold=0):
 def main(argv):
     
     default_file = '/home/pi/Pictures/circle4.jpg'
-
-    video_file = 'manual_2021-02-10_08.43.36_0.mp4' # new concentric targets
-    #video_file = 'manual_2021-02-10_18.57.41_1.mp4' # more of the same
-    #video_file = 'manual_2021-02-10_20.28.08_2.mp4' # yet more same
-    video_file = 'manual_2021-02-11_00.18.44_0.mp4' # same, more
-    
-    #video_file = 'small_H1_out4.mp4'
-    #video_file = 'output.mp4'
+    video_file = 'manual_2021-02-11_08.29.52_1.mp4' # moving parts
 
     showImage = False    # true to display detected frame
     showImage2 = False   # true to display mask image
@@ -105,9 +98,8 @@ def main(argv):
 
     # --- configuration variables
 
-    minGrey = 140   # greyscale threshold for "black" (0..255)
-    maxGrey = 190
-    #minGrey = 100   # greyscale threshold for "black" (0..255)
+    minGrey = 140  # greyscale threshold between black & white (0..255)
+    
     fc = 0    # video frame counter
     cT = 0    # total # circles detected    
     bc = 0     # how many frames in which multiple blobs detected
@@ -121,95 +113,63 @@ def main(argv):
     xSum = [0, 0, 0]  # storage to calculate variance (x)
     ySum = [0, 0, 0]  # storage to calculate variance (y)
     dSum = [0, 0, 0]  # contour diameter 
-    
-    # (x,y) variance data accumulator for 5 fiducials
-    # Ad[3][0] holds data for fiducial #4, x coord.
-    Ad = [ [[0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0]], 
-           [[0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0]], 
-           [[0, 0, 0], [0, 0, 0]] ]
-    
+        
     filename = argv[0] if len(argv) > 0 else video_file
-    print("--- File: %s" % filename)    
-
+    
+    #print("n, mm, %s" % filename)    
     video = cv.VideoCapture(filename)
-
     if not video.isOpened():
         print("Could not open file %s" % filename)
-        sys.exit()
-
-    # Attempt reading of just the first frame.
-    ok, frame = video.read()
+        sys.exit()    
+    ok, frame = video.read()  # read 1st frame
     if not ok:        
         print ('Error opening input file %s' % filename)
         sys.exit()
-
-    #cv.imwrite("frame1.png",frame)  # write out Frame #1
-    #exit() # DEBUG
-
-    # csv file column headers
-    #print("count, dist")
     
-    # expected target point area, Grey Thresh = 140
+    """
+    inframe = 0
+    # tl_00004_00821.jpg
+    infile = "tl_00004_%05d.jpg" % inframe
+    print("--- File: %s" % infile)
+    frame = cv.imread(infile)
+    """        
     
-    #Tx,Ty,Td  = (609.967,110.887,107.2)  # UR1
-    #Tx,Ty,Td  = (609.967,110.887,14.842) # UR4
-    
-    #Tx,Ty,Td = (609.406,277.353,111.3)   # CR1
-    #Tx,Ty,Td = (612.792,278.917,062.8)   # CR2
-    #Tx,Ty,Td = (612.792,278.917,045.8)   # CR3
-    #Tx,Ty,Td = (612.792,278.917,015.8)   # CR3
-    
-    #Tx,Ty,Td = (609.406,277.353,15.1)    # CR4
-    #Tx,Ty,Td = (608.944,447.198,110.2)   # LR1
-    #Tx,Ty,Td = (608.944,447.198,15.5)    # LR4
-    
-    #Tx,Ty,Td = (409.783,270.707,128.4)   # BT1  beam tip, largest
-    #Tx,Ty,Td = (409.572,272.067,102.2)   # BT2
-    #Tx,Ty,Td = (409.783,270.707,87.4)   # BT3    
-    #Tx,Ty,Td = (409.783,270.707,51.6)   # BT4 
-    #Tx,Ty,Td = (409.783,270.707,38.9)    # BT5  beam tip, smallest
-        
-    #Tx,Ty,Td = (199.800,264.600,126.5)   # BL1 
-    #Tx,Ty,Td = (199.800,264.600,100.2)   # BL2
-    #Tx,Ty,Td = (199.800,264.600,86.0)    # BL3
-    #Tx,Ty,Td = (199.800,264.600,50.2)    # BL4
-    #Tx,Ty,Td = (199.370,264.399,38.8)    # BL5 
-    
-    Tx,Ty,Td = (1,1,38.8)    # nothing, nothing, nothing at all.
-    
-    # ==================== main loop ==============================
+    # ==================== main loop over image frames ==============
     while stop==False:     
      if (not pause):
+
+      # (x,y) variance data accumulator for 5 fiducials
+      # Ad[3][0] holds data for fiducial #4, x coord.
+      Ad = [ [[0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0]], 
+             [[0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0]], 
+             [[0, 0, 0], [0, 0, 0]] ]
+         
       #cv.imwrite("frame1.png",frame)
       #exit() # DEBUG
-      fc += 1      
-      frame=frame[-600:,0:750,:] # mask off top of frame (date/time)
+      fc += 1      # image frame counter
+      
+      #frame=frame[-650:,0:750,:] # mask off top of frame (date/time)
       gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)       
              
       #gray = cv.medianBlur(gray, 3)  # Benefit accuracy? (no)
-      #gray = unsharp_mask(gray)  # Benefit? (no)
+      #gray = unsharp_mask(gray)      # Benefit? (no)
       
       mask = cv.inRange(gray, minGrey, 255)  # hard threshold
-      #mask = 255-cv.inRange(gray, minGrey, 255)
-      #minGrey += 1  # scan threshold through range
       
-      #ret,thresh = cv.threshold(gray,127,255,cv.THRESH_BINARY)
-      #contours, hierarchy = cv.findContours(mask,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE)
       contours, hierarchy = cv.findContours(mask,cv.RETR_TREE,cv.CHAIN_APPROX_NONE)
       
       #print("Thresh: %d Contours: %d" % (minGrey,len(contours)))
       cframe = np.zeros(shape=frame.shape, dtype=np.uint8) # create blank BGR image      
-      
-      clist = []
+            
       oF = []     # list of (x,y) center for outer ring of fiducials
       aC = []     # list of (x,y) centers for all contours
-      aF = [[]]   # list of all centers of all fiducial rings
+      aF = [[]]   # list of all centers of all fiducial rings      
       
-      
-      for i in range(len(contours)): # loop over all contours
+      for i in range(len(contours)): # over all contours in frame
        M = cv.moments(contours[i])
-       A = M['m00']  # area of contour
-       if (A > 80) and (A < 40000):  # contour expected size?
+       A = M['m00']  # area of contour  (3280/1024) = 3.203
+       sf = 10.26  # 3.203 ^ 2
+       if (A > 80*sf) and (A < 40000*sf):  # contour expected size?
          cnt = contours[i]
          perimeter = cv.arcLength(cnt,True)
          x,y,w,h = cv.boundingRect(cnt)
@@ -222,34 +182,15 @@ def main(argv):
          cy = (M['m01']/A)
          aC.append((cx,cy)) # save in list of all contour centers
            
-         if (A > 8659) and (A < 40000):  # contour expected size?          
-          
-          if (R > 0.85): # typ > 0.92
-            cv.drawContours(cframe, contours, i, (255,100,100), 1)
-            #clist.append(cnt)  # save this contour
-            oF.append((cx,cy))            
-            #print("(%5.3f,%5.3f)" % (cx,cy))
+            # contour of expected size and circularity (typ > 0.92)?
+         if (A > 8659*sf) and (A < 40000*sf) and (R > 0.85): 
+            cv.drawContours(cframe, contours, i, (255,100,100), 1)            
+            oF.append((cx,cy))        # save this center point in list    
             
-            dx = abs(cx - Tx)  # 608.980,447.259
-            dy = abs(cy - Ty)
-            if (dx < 20) and (dy < 20):
-            #if True:
-              #print("%05.3f,%05.3f A=%5.1f D=%5.3f Ratio: %5.3f %5.3e,%5.3e" % (cx,cy,A,D,R,dx,dy),end="")
-              if (abs(D-Td) < (0.1*D)):
-                xSum = update(xSum,cx)
-                ySum = update(ySum,cy)
-                dSum = update(dSum,D)
-                #print(" D=%5.3f" % D,end="")
-              #print("")
-              
-              kp = cv.KeyPoint(cx,cy,10) # to draw center-indicator mark
-              cframe = cv.drawKeypoints(
-                cframe, [kp], np.array([]), (128,255,128), cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)                                
-                      
       #==  end of for i in contours[]  =============================
       
-      # --------------------------------------------------------------------
-      # Here we have the outer contours of the five fiducials in (clx[],cly[])
+      # ---------------------------------------------------------------
+      # Outer contours of the five fiducials in (clx[],cly[])
       for i in range(len(oF)):            
           cv.putText(cframe, str(i+1), (int(oF[i][0]),int(oF[i][1])), cv.FONT_HERSHEY_SIMPLEX, 1, 
               (255,255,255), 1, cv.LINE_AA)                        
@@ -261,19 +202,76 @@ def main(argv):
               # print("(%d,%d) %5.3f" % (i,j,dist))
               update(Ad[j][0],aC[i][0]) # record X coord
               update(Ad[j][1],aC[i][1]) # record Y coord
-              
+      # --------------------------------------------------------------
+      fA = [] # list of final (x,y) centers of each fiducial
+      for j in range(len(oF)):  # j is contour index number [0..4]
+        (xMean,xStd,_) = finalize(Ad[j][0])
+        (yMean,yStd,_) = finalize(Ad[j][1])
+        fA.append((xMean,yMean))
+
+      #for j in range(len(fA)):
+      #  print("%5.3f,%5.3f, " % (fA[j][0],fA[j][1]),end="")
+      #print("")  
+      # Fiducial indexes: BT:0 BL:1 UR:4 CR:3 BR:2  fA[BT]=BoomTip
+      BT=0; BL=1; UR=4; CR=3; BR=2
+      
+      # ----------------------------------------------------
             
+      L1 = line([fA[BL][0],fA[BL][1]], 
+        [fA[BT][0],fA[BT][1]]) # circles on boom
+      L2 = line([fA[UR][0],fA[UR][1]], 
+        [fA[BR][0],fA[BR][1]]) # fixed circles (2 on end)
+      R = intersection(L1, L2)
+      
+      pt1 = cv.KeyPoint(R[0],R[1],14)      # make a keypoint      
+      pt2 = cv.KeyPoint(R[0],R[1],16)      # make a keypoint      
+      #if showImage:
+      cframe = cv.drawKeypoints(  # draw the intersection point
+        cframe, [pt1,pt2], np.array([]), (255,100,100), cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)            
+      
+      # ----------------------------------------        
+      d02_mm = 11.014  # Distance from UR to BR marks, per Inkscape SVG
+      if R:
+        # Rdist in pixels, line-intersection to center lg.circle
+        Rdist = distanceS(R,(fA[CR][0],fA[CR][1]))                
+        # pDist: pixels between UpperRight and BottomRight marks
+        pDist = distance((fA[UR][0],fA[UR][1]),(fA[BR][0],fA[BR][1]) )
+        mmpp = d02_mm / pDist # image scale in (mm per pixel)
+        umpp = 1000*mmpp  # microns per pixel
+        rDistC = Rdist * mmpp  # Rdist in units of mm
+        
+        # distance from center to bottom mark (should stay constant)
+        bDistC = distance((fA[CR][0],fA[CR][1]),(fA[BR][0],fA[BR][1]))*mmpp
+        # distance from center to top mark (should stay constant)
+        tDistC = distance((fA[CR][0],fA[CR][1]),(fA[UR][0],fA[UR][1]))*mmpp
+        
+        sec = time.time() # real time, seconds since epoch
+
+        # beam (mm) above center & 2 hopefully fixed distances
+        #print ("%d,%5.4f,%5.4f,%5.4f" % (fc,rDistC,bDistC,tDistC))
+        print ("%d,%5.4f,%5.4f,%5.4f" % (sec,rDistC,bDistC,tDistC))        
+        
       #print(" ")                          
       cv.imshow("contours", cframe) # DEBUG - show contours
-      
-      #gray = cv.medianBlur(gray, 3)  # did not benefit accuracy      
-      #gs = unsharp_mask(gray)  # sharpen image edges
- 
+       
 # -------------------------------------------------
       #exit()
+      
       ok, frame = video.read()
       if not ok:
-            break                
+            break       
+                  
+      """                     
+      inframe += 1          
+      infile = "tl_00004_%05d.jpg" % inframe 
+      try:
+        #print(infile) 
+        frame = cv.imread(infile)      
+      except (FileNotFoundError, IOError):
+        break
+      if frame is None:  # we got nothing?
+        break            # need to finish up then
+      """      
 
 # --end pause loop -------------------------------------
 
@@ -286,9 +284,7 @@ def main(argv):
         fcount += 1
         #exit()
       
-           
-     #if (minGrey > maxGrey):
-     #    stop=True
+
      key = cv.waitKey(1)
      if key == ord('q'):
            stop=True      
@@ -298,11 +294,14 @@ def main(argv):
 # ------------------------------------------
 # after all is calculated, show final averages
 
+    """"
+    print("Frames: %d" % fc)
     for j in range(len(oF)):  # j is contour index number [0..4]
       (xMean,xStd,_) = finalize(Ad[j][0])
       (yMean,yStd,_) = finalize(Ad[j][1])
-      print("F%d: (%5.3f,%5.3f) std: %5.3e,%5.3e" % 
-        (j+1,xMean,yMean,xStd,yStd))
+      print("F%d: (%5.3f,%5.3f) std: %5.3e,%5.3e (%d)" % 
+        (j+1,xMean,yMean,xStd,yStd,Ad[j][0][0]))
+    """
     
     return 0
 
@@ -311,7 +310,9 @@ if __name__ == "__main__":
 
 # =====================================================================
 #   combine jpg images into mp4 video:
-# ffmpeg -start_number 0 -i tl_00003_%05d.jpg -c:v libx264 -vf "fps=24,format=yuv420p" H1_out5.mp4
+# ffmpeg -start_number 0 -i tl_00005_%05d.jpg -c:v libx264 -vf "fps=24,format=yuv420p" H1_out8.mp4
 #   rescale video to new (x,y) dimensions:
 # ffmpeg -i H1_out4.mp4 -vf scale=640:360,setsar=1:1 small_H1_out4.mp4
 # 50.07 frames/cycle, 24 frames/s => T = 2.086 sec
+# Picam v1.3 FullRes: (3280x2464)
+# find /dev/shm/t?.jpg | entr ./circle4.py /dev/shm/t7.jpg
